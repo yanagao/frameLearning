@@ -1,5 +1,6 @@
 (function(factory) {
 	var root = (typeof self == 'object' && self.self == self && self) || (type global == 'object' && global.global == global && global);
+	// define与exports是两个依赖的库，define优先级高于exports
 	if (typeof define === 'function' && typeof define.amd) {
 		define(['underscore', 'jquery', 'exports'], function(_, $, exports) {
 			root.Backbone = factory(root, Backbone, _, $);
@@ -13,7 +14,7 @@
 			factory(root, Backbone, _, $);
 		}
 	} else {
-		// Backbone必须依赖于 Underscore.js，DOM操作和AJAX请求依赖于第三方jQuery/Zepto/ender之一，也可以通过 Backbone.setDomLibrary( lib ) 设置其他的第三方库。
+		// Backbone必须依赖于 Underscore.js，DOM操作和AJAX请求依赖于第三方jQuery/Zepto/ender之一。
 		root.Backbone = factory(root, {}, root._, (root.jQuery || root.Zepto || root.ender || root.$));
 	}
 
@@ -107,10 +108,7 @@
 		}
 		return events;
 	};
-
-	Events.on = function(name, callback, context) {
-		return internalOn(this, name, callback, context);
-	};
+	// 跟踪监听
 	var internalOn = function(obj, name, callback, context, listening) {
 		obj._events = eventsApi(onApi, obj._events || {}, name, callback, {
 			context: context,
@@ -125,6 +123,56 @@
 		return obj;
 	};
 
+	// 绑定事件
+	Events.on = function(name, callback, context) {
+		alert('events.on');
+		return internalOn(this, name, callback, context);
+	};
+	// 执行事件
+	Events.trigger = function(name) {
+		if (!this._events) {
+			return this;
+		}
+		var length = Math.max(0, arguments.length - 1);
+		var args = Array(length);
+		for (var i = 0; i < length; i++) {
+			args[i] = arguments[i + 1];
+		}
+		eventsApi(triggerApi, this._events, name, void 0, args);
+		return this;
+	};
+	var triggerApi = function(objEvents, name, cb, args) {
+		if (objEvents) {
+			var events = objEvents[name];
+			var allEvents = objEvents.all;
+			if (events && allEvents) {
+				allEvents = allEvents.slice(); // ?????
+			}
+			// if (events) {
+			// 	triggerEvents(events, args);
+			// }
+			// if (allEvents) {
+			// 	triggerEvents(allEvents, [name].concat(args));
+			// }
+		}
+		return objEvents;
+	};
+	// 触发事件优化？
+	// var triggerEvents = function(events, args) {
+	// 	var ev,
+	// 		i = -1,
+	// 		l = events.length,
+	// 		a1 = args[0],
+	// 		a2 = args[1],
+	// 		a3 = args[2];
+	// 	switch (args.length) {
+	// 		case 0: while (++i < l) {
+
+	// 		}
+	// 	}
+	// };
+
+
 	Events.listenTo = function(obj, name, callback) {
 		if (!obj) {
 			return this;
@@ -133,7 +181,18 @@
 		var listeningTo = this._listeningTo || (this._listeningTo = {});
 		var listening = listeningTo[id];
 
-		
+		if (!listening) {
+			var thisId = this._listenId || (this._listenId = _.uniqueId('l'));
+			listening = listeningTo[id] = {
+				obj: obj,
+				objId: id,
+				id: thisId,
+				listeningTo: listeningTo,
+				count: 0
+			};
+		}
+		internalOn(obj, name, callback, this, listening);
+		return this;
 	};
 
 	var onApi = function(events, name, callback, options) {
@@ -220,8 +279,30 @@
 		return this.on(events, void 0, context);
 	};
 
-	Events.listenToOnce = function() {
+	Events.listenToOnce = function(obj, name, callback) {
+		var events = eventsApi(onceMap, {}, name, callback, _.bind(this.off, this));
+		return this.listenTo(obj, events);
+	};
 
+	Events.stopListening = function(obj, name, callback) {
+		var listeningTo = this._listeningTo;
+		if (!listeningTo) {
+			return this;
+		}
+		var ids = obj ? [obj._listenId] : _.keys(listeningTo);
+
+		for (var i = 0; i < ids.length; i++) {
+			var listening = listeningTo[ids[i]];
+
+			if (!listening) {
+				break;
+			}
+			listening.obj.off(name, callback, this);
+		}
+		if (_.isEmpty(listeningTo)) {
+			this._listeningTo = void 0;
+		}
+		return this;
 	};
 
 	var onceMap = function(map, name, callback, offer) {
@@ -239,10 +320,69 @@
 	Events.bind = Events.on;
 	Events.unbind = Events.off;
 
+	_.extend(Backbone, Events);
+
 
 
 	// 模型构造函数和原型扩展
-	var Model = Backbone.Model = {};
+	var Model = Backbone.Model = function(attributes, options) {
+		var attrs = attributes || {};
+		options || (options = {});
+		this.cid = _.uniqueId(this.cidPrefix);
+		this.attributes = {};
+		// if (options.collection) {
+		// 	this.collection = options.collection;
+		// }
+		// if (options.parse) {
+		// 	attrs = this.parse(attrs, options) || {};
+		// }
+		attrs = _.defaults({}, attrs, _.result(this, 'defaults'));
+		this.set(attrs, options);
+		this.change = {};
+		this.initialize.apply(this, arguments);
+	};
+
+	// 模型的原型
+	_.extend(Model.prototype, Events, {
+		changed: null,
+		validationError: null,
+		idAttribute: 'id',
+		cidPrefix: 'c',
+		// 初始化为空
+		initialize: function() {},
+
+		sync: function() {
+			return this.attributes[attr];
+		},
+
+		// 获取属性的值
+		get: function(attr) {
+			return this.attributes[attr];
+		},
+
+		// 
+		escape: function(attr) {
+			return _.escape(this.get(attr));
+		},
+
+		// 非空值时返回true
+		has: function(attr) {
+			return this.get(attr) != null;
+		},
+
+		matches: function(attr) {
+			return !!_.iteratee(attrs, this)(this.attributes);
+		},
+
+		set: function(key, val, options) {
+			if (key == null) {
+				return this;
+			}
+		}
+
+	});
+
+
 	// 集合构造函数和原型扩展
 	var Collection = Backbone.Collection = {};
 	// 路由配置器构造函数和原型扩展
@@ -257,4 +397,6 @@
 	var extend = function(protoProps, classProps) {}
 	// 自扩展方法
 	Backbone.Model.extend = Backbone.Collection.extend = Backbone.Router.extend = Backbone.View.extend = extend;
-}).call(this);
+
+	return Backbone;
+}));
