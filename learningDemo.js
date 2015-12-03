@@ -330,12 +330,12 @@
 		options || (options = {});
 		this.cid = _.uniqueId(this.cidPrefix);
 		this.attributes = {};
-		// if (options.collection) {
-		// 	this.collection = options.collection;
-		// }
-		// if (options.parse) {
-		// 	attrs = this.parse(attrs, options) || {};
-		// }
+		if (options.collection) {
+			this.collection = options.collection;
+		}
+		if (options.parse) {
+			attrs = this.parse(attrs, options) || {};
+		}
 		attrs = _.defaults({}, attrs, _.result(this, 'defaults'));
 		this.set(attrs, options);
 		this.change = {};
@@ -378,7 +378,224 @@
 			if (key == null) {
 				return this;
 			}
-		}
+			var attrs;
+			if (typeof key === 'object') {
+				attrs = key;
+				options = val;
+			} else {
+				(attrs = {})[key] = val;
+			}
+
+			options || (options = {});
+
+			// 验证
+			if (!this._validate(attrs, options)) {
+				return false;
+			}
+			// 
+			var unset = options.unset;
+			var silent = options.silent;
+			var change = [];
+			var changing = this._changing;
+			this._changing = true;
+
+			if (!changing) {
+				this._previousAttributes = _.clone(this.attributes);
+				this.changed = {};
+			}
+			var current = this.attributes;
+			var changed = this.changed;
+			var prev = this._previousAttributes;
+
+			for (var attr in attrs) {
+				val = attrs[attr];
+				if (!_.isEqual(current[attr], val)) {
+					changes.push(attr);
+				}
+				if (!_.isEqual(prev[attr], val)) {
+					changed[attr] = val;
+				} else {
+					delete changed[attr];
+				}
+				unset ? delete current[attr] : current[attr] = val;
+			}
+			// 获取id
+			this.id = this.get(this.idAttribute);
+
+			if (!silent) {
+				if (changes.length) {
+					this._pending = options;
+				}
+				for (var i = 0; i < changes.length; i++) {
+					this.trigger('change:' + changes[i], this, current[changes[i]], options);
+				}
+			}
+
+			if (changing) {
+				return this;
+			}
+			if (!silent) {
+				while (this._pending) {
+					options = this._pending;
+					this._pending = false;
+					this.trigger('change', this, options);
+				}
+			}
+			this._pending = false;
+			this._changing = false;
+			return this;
+		},
+		// 如果属性不存在则删除
+		unset: function(attr, options) {
+			return this.set(attr, void 0, _.extend({}, options, {unset: true}));
+		},
+		clear: function(options) {
+			var attrs = {};
+			for (var key in this.attributes) {
+				attrs[key] = void 0;
+			}
+			return this.set(key, _.extend({}, options, {unset: true}));
+		},
+		hasChanged: function(attr) {
+			if (attr == null) {
+				return !_.isEmpty(this.changed);
+			}
+			return _.has(this.changed, attr);
+		},
+		clone: function() {
+			return new this.constructor(this.attributes);
+		},
+		changedAttributes: function(diff) {
+			if (!diff) {
+				return this.hasChanged() ? _.clone(this.changed) : false;
+			}
+			var old = this.changing ? this.previousAttributes : this.attributes;
+			var changed = {};
+			for (var attr in diff) {
+				var val = diff[attr];
+				if (_.isEqual(old[attr], val)) {
+					continue;
+				}
+				changed[attr] = val;
+			}
+			return _.size(changed) ? changed : false;
+		},
+		previous: function(attr) {
+			if (attr == null || !this.previousAttributes) {
+				return null;
+			}
+			return this._previousAttributes[attr];
+		},
+		previousAttributes: function() {
+			return _.clone(this._previousAttributes);
+		},
+		parse: function(resp, options) {
+			return resp;
+		},
+		fetch: function(options) {
+			options = _.extand({parse: true}, options);
+			var model = this;
+			var success = options.success;
+			options.success = function(resp) {
+				var serverAttrs = options.parse ? model.parse(resp, options) : resp;
+				if (!model.set(serverAttrs, options)) {
+					return false;
+				}
+				if (success) {
+					success.call(options.context, model, resp, options);
+				}
+				model.trigger('sync', model, resp, options);
+			};
+			wrapError(this, options);
+			return this.sync('read', this, options);
+		},
+		save: function(key, val, options) {
+			var attrs;
+			if (key == null || typeof key === 'object') {
+				attrs = key;
+				options = val;
+			} else {
+				(attrs = {})[key] = val;
+			}
+
+			options = _.extend({validate: true, parse: true}, options);
+			var wait = options.wait;
+
+			if (attrs && !wait) {
+				if (!this.set(attrs, options)) {
+					return false;
+				}
+			} else {
+				if (!this._validate(attrs, options)) {
+					return false;
+				}
+			}
+
+			var model = this;
+			var success = options.success;
+			var attributes = this.attributes;
+			options.success = function(resp) {
+				model.attributes = attributes;
+				var serverAttrs = options.parse ? model.parse(resp, options) : resp;
+				if (wait) {
+					serverAttrs = _.extend({}, attrs, serverAttrs);
+				}
+				if (serverAttrs && !model.set(serverAttrs, options)) {
+					return false;
+				}
+				if (success) {
+					success.call(options.context, model, resp, options);
+				}
+				model.trigger('sync', model, resp, options);
+			};
+			wrapError(this, options);
+			if (attrs && wait) {
+				this.attributes = _.extend({}, attributes, attrs);
+			}
+			var method = this.isNew() ? 'create' : (options.patch ? 'patch' : 'update');
+			if (method === 'patch' && !options.attrs) {
+				options.attrs = attrs;
+			}
+			var xhr = this.sync(method, this, options);
+
+			this.attributes = attributes;
+			return xhr;
+		},
+		destroy: function(options) {
+			options = options ? _.clone(options) : {};
+			var model = this;
+			var success = options.success;
+			var wait = options.wait;
+
+			var destroy = function() {
+				model.stopListening();
+				model.trigger('destroy', model, model.collection, options);
+			};
+
+			options.success = function(resp) {
+				if (wait) {
+					destroy();
+				}
+				if (success) {
+					success.call(options.context, model, resp, options);
+				}
+				if (!model.isNew()) {
+					model.trigger('sync', model, resp, options);
+				}
+			};
+
+			var xhr = false;
+			if (this.isNew()) {
+				_.defer(options.success);
+			} else {
+				wrapError(this, options);
+				xhr = this.sync('delete', this, options);
+			}
+			if (!wait) {
+				destroy();
+			}
+			return xhr;
+		},
 
 	});
 
