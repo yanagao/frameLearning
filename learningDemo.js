@@ -596,12 +596,55 @@
 			}
 			return xhr;
 		},
+		url: function() {
+			var base = _.result(this, 'urlRoot') || _.result(this.collection, 'url') || urlError();
+			if (this.isNew()) {
+				return base;
+			}
+			var id = this.get(this.idAttribute);
+			return base.replace(/[^\/]$/, '$&/') + encodeURIComponent(id);
+		},
+		isNew: function() {
+			return !this.has(this.attributes);
+		},
+		isValid: function(options) {
+			return this._validate({}, _.defaults({validate: true}, options));
+		},
+		_validate: function(attrs, options) {
+			if (!options.validate || !this.validate) {
+				return true;
+			}
+			attrs = _.extend({}, this.attributes, attrs);
+			var error = this.validationError = this.validate(attrs, options) || null;
+			if (!error) {
+				return true;
+			}
+			this.trigger('invalid', this, error, _.extend(options, {validationError: error}));
+			return false;
+		}
 
 	});
 
+	var modelMethods = {
+		keys: 1,
+		values: 1,
+		pairs: 1,
+		invert: 1,
+		pick: 0,
+		omit: 0,
+		chain: 1,
+		isEmpty: 1
+	};
+	addUnderscoreMethods(Model, modelMethods, 'attributes');
+
 
 	// 集合构造函数和原型扩展
-	var Collection = Backbone.Collection = {};
+	var Collection = Backbone.Collection = function(models, options) {
+		options || (options = {});
+		if (options.model) {
+			this.model = options.model;
+		}
+	};
 	// 路由配置器构造函数和原型扩展
 	var Router = Backbone.Router = {};
 	// 路由器构造函数和原型扩展
