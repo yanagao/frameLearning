@@ -166,7 +166,7 @@
 	// 		a2 = args[1],
 	// 		a3 = args[2];
 	// 	switch (args.length) {
-	// 		case 0: while (++i < l) {
+	// 		case 0: while (++i  l) {
 
 	// 		}
 	// 	}
@@ -283,7 +283,7 @@
 		var events = eventsApi(onceMap, {}, name, callback, _.bind(this.off, this));
 		return this.listenTo(obj, events);
 	};
-
+	// 删除添加的观察对象
 	Events.stopListening = function(obj, name, callback) {
 		var listeningTo = this._listeningTo;
 		if (!listeningTo) {
@@ -378,6 +378,7 @@
 			if (key == null) {
 				return this;
 			}
+			// 将key转换成attrs，再初始化options
 			var attrs;
 			if (typeof key === 'object') {
 				attrs = key;
@@ -434,6 +435,7 @@
 			if (changing) {
 				return this;
 			}
+			// 当silent为false时，触发change事件
 			if (!silent) {
 				while (this._pending) {
 					options = this._pending;
@@ -492,6 +494,7 @@
 		parse: function(resp, options) {
 			return resp;
 		},
+		// 从服务器端获取模型
 		fetch: function(options) {
 			options = _.extand({parse: true}, options);
 			var model = this;
@@ -552,6 +555,7 @@
 			if (attrs && wait) {
 				this.attributes = _.extend({}, attributes, attrs);
 			}
+			// 第一次使用create方式
 			var method = this.isNew() ? 'create' : (options.patch ? 'patch' : 'update');
 			if (method === 'patch' && !options.attrs) {
 				options.attrs = attrs;
@@ -610,6 +614,7 @@
 		isValid: function(options) {
 			return this._validate({}, _.defaults({validate: true}, options));
 		},
+		// 校验，不合法触发error事件
 		_validate: function(attrs, options) {
 			if (!options.validate || !this.validate) {
 				return true;
@@ -638,7 +643,7 @@
 	addUnderscoreMethods(Model, modelMethods, 'attributes');
 
 
-	// 集合构造函数和原型扩展
+	// 集合构造函数和原型扩展，创建集合
 	var Collection = Backbone.Collection = function(models, options) {
 		options || (options = {});
 		if (options.model) {
@@ -692,7 +697,7 @@
 		sync: function() {
 			return Backbone.sync.apply(this, arguments);
 		},
-
+		// 直接添加模型
 		add: function(models, options) {
 			return this.set(models, _.extend)
 		},
@@ -865,6 +870,7 @@
 			},
 			// 根据comparator对collection排序
 			sort: function(options) {
+				// 如果没有comparator则抛出错误
 				if (!this.comparator) {
 					throw new Error('Cannot sort a set without a comparator');
 				}
@@ -893,6 +899,7 @@
 			pluck: function(attr) {
 				return _.invoke(this.models, 'get', attr);
 			},
+
 			fetch: function(options) {
 				options = options ? _.clone(options) : {};
 				if (options.parse === void 0) {
@@ -906,6 +913,7 @@
 					if (success) {
 						success(collection, resp, options);
 					}
+					// 更新客户端模型
 					collection.trigger('sync', collection, resp, options);
 				};
 				wrapError(this, options);
@@ -1072,6 +1080,7 @@
 				callback = this[name];
 			}
 			var route = this;
+			// 和history一起使用
 			Backbone.history.route(route, function(fragment) {
 				var args = router._extractParameters(route, fragment);
 				if (router.execute(callback, args, name) !== false) {
@@ -1228,7 +1237,7 @@
 				// 如果是hashchange方式，绑定window的hashchange事件去监听
 				addEventListener('hashChange', this.checkUrl, false);
 			} else if (this._wantsHashChange) {
-				// 如果不支持onhashchange，则设置一个定时器为监听url的改变
+				// 如果不支持onhashchange，则 设置一个定时器为监听url的改变
 				this._checkUrlInterval = setInterval(this.checkUrl, this.interval);
 			}
 
@@ -1363,7 +1372,7 @@
 		child.__super__ = parent.prototype;
 		return child;
 	};
-	// 视图构造函数和原型扩展
+	// 视图构造函数和原型扩展 展示数据
 	var View = Backbone.View = function(options) {
 		this.cid = _.uniqueId('view');
 		_.extend(this, _.pick(options, viewOptions));
@@ -1376,6 +1385,7 @@
 	var viewOptions = ['model', 'collection', 'el', 'id', 'attributes', 'className', 'tagName', 'events'];
 
 	_.extend(View.prototype, Events, {
+
 		tagName: 'div',
 
 		$: function(selector) {
@@ -1383,7 +1393,7 @@
 		},
 
 		initialize: function() {},
-
+		// 默认将内容加到this.$el中
 		render: function() {
 			return this;
 		},
@@ -1536,14 +1546,6 @@
 		'read': 'GET'
 	};
 
-	Backbone.ajax = function() {
-		return Backbone.$.ajax.apply(Backbone.$, arguments);
-	};
-	// 自扩展函数
-	var extend = function(protoProps, classProps) {}
-	// 自扩展方法
-	Backbone.Model.extend = Backbone.Collection.extend = Backbone.Router.extend = Backbone.View.extend = extend;
-
 	var urlError = function() {
 		throw new Error('A "url" property or function must be specified');
 	};
@@ -1556,6 +1558,15 @@
 			model.trigger('error', model, resp, options);
 		};
 	};
+	
+	Backbone.ajax = function() {
+		return Backbone.$.ajax.apply(Backbone.$, arguments);
+	};
+	// 自扩展函数
+	var extend = function(protoProps, classProps) {}
+	// 自扩展方法
+	Backbone.Model.extend = Backbone.Collection.extend = Backbone.Router.extend = Backbone.View.extend = extend;
+
 
 	return Backbone;
 }));
